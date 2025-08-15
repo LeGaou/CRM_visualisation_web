@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Force-Directed Graph with Modal</title>
+    <style>
+        /* CSS for styling the webpage and graph elements. */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+        }
+        svg {
+            width: 100vw;
+            height: 100vh;
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+        .node text {
+            fill: #000;
+            font-size: 10px;
+            text-anchor: middle;
+        }
+        /* Modal styling */
+        .modal {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        }
+        .modal h4 {
+            margin: 0 0 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="graph-container"></div>
+    <div id="info-modal" class="modal"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script>
+        // Data for the force-directed graph, including nodes and links.
+        const data = {
+            nodes: [
+                { id: "Alice", field: "tech", rank: "ceo", age: 34, job: "CEO" },
+                { id: "Bob", field: "tech", rank: "manager", age: 28, job: "Manager" },
+                { id: "Charlie", field: "tech", rank: "worker", age: 25, job: "Worker" },
+                { id: "David", field: "tech", rank: "intern", age: 31, job: "Intern" },
+                { id: "Eve", field: "medicine", rank: "manager", age: 45, job: "Manager" },
+                { id: "Frank", field: "medicine", rank: "worker", age: 39, job: "Worker" },
+                { id: "Grace", field: "cosmetics", rank: "ceo", age: 55, job: "CEO" },
+                { id: "Heidi", field: "cosmetics", rank: "worker", age: 29, job: "Worker" },
+                { id: "Ivan", field: "politics", rank: "ceo", age: 60, job: "Politician" },
+                { id: "Judy", field: "politics", rank: "worker", age: 40, job: "Staff" }
+            ],
+            links: [
+                { source: "Alice", target: "Bob" },
+                { source: "Alice", target: "David" },
+                { source: "Alice", target: "Charlie" },
+                { source: "Bob", target: "Charlie" },
+                { source: "Eve", target: "Frank" },
+                { source: "Grace", target: "Heidi" },
+                { source: "Ivan", target: "Judy" }
+            ]
+        };
+
+        // Get the dimensions of the browser window.
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // Create a D3 zoom behavior.
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 8]) // Set zoom limits.
+            .on('zoom', (event) => {
+                // Apply the zoom/pan transform to the main group.
+                mainGroup.attr('transform', event.transform);
+            });
+
+        // Select the graph container and append an SVG element.
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .call(zoom); // Apply the zoom behavior to the SVG.
+
+        // Main group to hold all graph elements (links, nodes, text) for easy zoom/pan.
+        const mainGroup = svg.append("g");
+
+        // D3 scale to map job fields to a color.
+        const colorField = d3.scaleOrdinal()
+            .domain(["tech", "medicine", "cosmetics", "politics"])
+            .range(["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]);
+
+        // D3 scale to map rank to a hue lightness.
+        const colorRank = d3.scaleOrdinal()
+            .domain(["intern", "worker", "manager", "ceo"])
+            .range(["#f0f8ff", "#add8e6", "#87cefa", "#1e90ff"]);
+
+        // Function to blend two colors.
+        const combineColors = (fieldColor, rankColor) => {
+            const fieldRGB = d3.rgb(fieldColor);
+            const rankRGB = d3.rgb(rankColor);
+            return `rgb(${Math.round((fieldRGB.r + rankRGB.r) / 2)}, ${Math.round((fieldRGB.g + rankRGB.g) / 2)}, ${Math.round((fieldRGB.b + rankRGB.b) / 2)})`;
+        };
+
+        // Initialize the D3 force simulation.
+        const simulation = d3.forceSimulation(data.nodes)
+            .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
+            .force("charge", d3.forceManyBody().strength(-300))
+            .force("center", d3.forceCenter(width / 2, height / 2));
+
+        // Create the links as SVG lines.
+        const link = mainGroup.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(data.links)
+            .join("line")
+            .attr("class", "link");
+
+        // Select the modal element from the HTML.
+        const infoModal = d3.select("#info-modal");
+
+        // Create the nodes as SVG groups.
+        const node = mainGroup.append("g")
+            .attr("class", "nodes")
+            .selectAll("g")
+            .data(data.nodes)
+            .join("g")
+            .attr("class", "node");
+
+        // Append a circle to each node group.
+        node.append("circle")
+            .attr("r", 10)
+            .attr("fill", d => combineColors(colorField(d.field), colorRank(d.rank)))
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended))
+            // Add mouseover to show the modal and highlight the circle.
+            .on("mouseover", function(event, d) {
+                d3.select(this).attr('stroke', 'black').attr('stroke-width', 2);
+                infoModal
+                    .html(`<h4>${d.id}</h4><p>Job: ${d.job}</p><p>Field: ${d.field}</p><p>Rank: ${d.rank}</p><p>Age: ${d.age}</p>`)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 20) + "px")
+                    .style("opacity", 1);
+            })
+            // Add mouseout to hide the modal and revert highlighting.
+            .on("mouseout", function() {
+                d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1.5);
+                infoModal.style("opacity", 0);
+            });
+
+        // Append a text label to each node group.
+        node.append("text")
+            .attr("y", 20)
+            .text(d => d.id);
+
+        // Function called on every tick of the simulation to update positions.
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+            node
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+
+        // Dragging functions for the nodes.
+        function dragstarted(event) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            event.subject.fx = event.subject.x;
+            event.subject.fy = event.subject.y;
+        }
+
+        function dragged(event) {
+            event.subject.fx = event.x;
+            event.subject.fy = event.y;
+        }
+
+        function dragended(event) {
+            if (!event.active) simulation.alphaTarget(0);
+            event.subject.fx = null;
+            event.subject.fy = null;
+        }
+    </script>
+</body>
+</html>
