@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Force-Directed Graph with Control Panels</title>
+    <!-- Add Font Awesome for the menu icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* CSS for styling the webpage and graph elements. */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+        }
+        svg {
+            width: 100vw;
+            height: 100vh;
+        }
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+            fill: none; /* Required for tree/radial links */
+        }
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+        .node text {
+            fill: #000;
+            font-size: 10px;
+            text-anchor: middle;
+        }
+        /* Modal styling */
+        .modal {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        }
+        .modal h4 {
+            margin: 0 0 5px 0;
+        }
+
+        /* === New: Container for the buttons === */
+        #menu-button-container {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            /* Buttons are now contained within a single element */
+            display: flex; 
+            gap: 10px; /* Space between buttons */
+            transition: left 0.3s ease; /* Smooth sliding animation */
+            z-index: 1001;
+        }
+        
+        #menu-button-container.open {
+            left: 270px; /* Slide the entire container out */
+        }
+        
+        /* The buttons themselves are now simpler */
+        .menu-button {
+            width: 40px;
+            height: 40px;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 0;
+            cursor: pointer;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .menu-button i {
+            color: #555;
+            font-size: 18px;
+        }
+
+        .side-window {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 250px;
+            height: 100%;
+            background-color: #333;
+            color: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+            transition: left 0.3s ease;
+            z-index: 1000;
+        }
+        .side-window.open {
+            left: 0;
+        }
+
+        .side-button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #555;
+            color: white;
+            border: none;
+            cursor: pointer;
+            text-align: left;
+        }
+        .side-button:hover {
+            background-color: #777;
+        }
+
+        /* Styles for the new color-changing dropdown */
+        .dropdown {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #555;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+            width: calc(100% - 20px);
+            left: 10px;
+        }
+        .dropdown-content button {
+            color: white;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            background-color: #555;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+        }
+        .dropdown-content button:hover {
+            background-color: #777;
+        }
+    </style>
+</head>
+<body>
+    <!-- The buttons are now inside a container -->
+    <div id="menu-button-container">
+        <button id="menu-button-1" class="menu-button">
+            <i class="fas fa-bars"></i>
+        </button>
+        <button id="menu-button-2" class="menu-button">
+            <i class="fas fa-database"></i>
+        </button>
+        <button id="menu-button-3" class="menu-button">
+            <i class="fas fa-cog"></i>
+        </button>
+    </div>
+    
+    <!-- The side window containers -->
+    <div id="side-window-1" class="side-window">
+        <h3>Graph Controls</h3>
+        <button class="side-button" id="force-view-button">Force-Directed</button>
+        <button class="side-button" id="tree-view-button">Tree</button>
+        <button class="side-button" id="radial-view-button">Radial</button>
+    </div>
+    <div id="side-window-2" class="side-window">
+        <h3>Data Filters</h3>
+        <button class="side-button">Filter by Field</button>
+        <button class="side-button">Filter by Rank</button>
+    </div>
+    <div id="side-window-3" class="side-window">
+        <h3>Settings</h3>
+        <!-- New dropdown for color changing options -->
+        <div class="dropdown">
+            <button class="side-button" id="color-dropdown-button">Change Colors</button>
+            <div id="color-dropdown" class="dropdown-content">
+                <button id="default-colors">Default Colors</button>
+                <button id="red-green-colorblind">Red-Green Colorblindness</button>
+                <button id="blue-red-colorblind">Blue-Red Colorblindness</button>
+            </div>
+        </div>
+        <button class="side-button">About</button>
+    </div>
+
+    <!-- Container for the D3-generated SVG graph. -->
+    <div id="graph-container"></div>
+    <!-- Modal element that shows on hover. -->
+    <div id="info-modal" class="modal"></div>
+
+    <!-- D3.js library from a CDN. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script>
+        // Data for the force-directed graph, including nodes and links.
+        const data = {
+            nodes: [
+                { id: "Alice", field: "tech", rank: "ceo", age: 34, job: "CEO" },
+                { id: "Bob", field: "tech", rank: "manager", age: 28, job: "Manager" },
+                { id: "Charlie", field: "tech", rank: "worker", age: 25, job: "Worker" },
+                { id: "David", field: "tech", rank: "intern", age: 31, job: "Intern" },
+                { id: "Eve", field: "medicine", rank: "manager", age: 45, job: "Manager" },
+                { id: "Frank", field: "medicine", rank: "worker", age: 39, job: "Worker" },
+                { id: "Grace", field: "cosmetics", rank: "ceo", age: 55, job: "CEO" },
+                { id: "Heidi", field: "cosmetics", rank: "worker", age: 29, job: "Worker" },
+                { id: "Ivan", field: "politics", rank: "ceo", age: 60, job: "Politician" },
+                { id: "Judy", field: "politics", rank: "worker", age: 40, job: "Staff" }
+            ],
+            links: [
+                { source: "Alice", target: "Bob" },
+                { source: "Alice", target: "David" },
+                { source: "Alice", target: "Charlie" },
+                { source: "Bob", target: "Charlie" },
+                { source: "Eve", target: "Frank" },
+                { source: "Grace", target: "Heidi" },
+                { source: "Ivan", target: "Judy" }
+            ]
+        };
+
+        // Get the dimensions of the browser window.
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        let simulation; // Declare simulation variable in a broader scope
+        let currentView = 'force'; // Track the current visualization type
+        let currentColorMode = 'default'; // Track the current color mode
+
+        // Create a D3 zoom behavior.
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 8]) // Set zoom limits.
+            .on('zoom', (event) => {
+                // Apply the zoom/pan transform to the main group.
+                mainGroup.attr('transform', event.transform);
+            });
+
+        // Select the graph container and append an SVG element.
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .call(zoom); // Apply the zoom behavior to the SVG.
+
+        // Main group to hold all graph elements (links, nodes, text) for easy zoom/pan.
+        const mainGroup = svg.append("g");
+
+        // === Color Palettes ===
+        const colorPalettes = {
+            default: {
+                field: d3.scaleOrdinal()
+                    .domain(["tech", "medicine", "cosmetics", "politics"])
+                    .range(["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]),
+                rank: d3.scaleOrdinal()
+                    .domain(["intern", "worker", "manager", "ceo"])
+                    .range(["#f0f8ff", "#add8e6", "#87cefa", "#1e90ff"])
+            },
+            redGreen: {
+                field: d3.scaleOrdinal()
+                    .domain(["tech", "medicine", "cosmetics", "politics"])
+                    .range(["#4c78a8", "#f58518", "#54a24b", "#e45756"]),
+                rank: d3.scaleOrdinal()
+                    .domain(["intern", "worker", "manager", "ceo"])
+                    .range(["#f0f8ff", "#c8d4e1", "#8ea8c4", "#5d7396"])
+            },
+            blueRed: {
+                field: d3.scaleOrdinal()
+                    .domain(["tech", "medicine", "cosmetics", "politics"])
+                    .range(["#54a24b", "#b279a2", "#e45756", "#f58518"]),
+                rank: d3.scaleOrdinal()
+                    .domain(["intern", "worker", "manager", "ceo"])
+                    .range(["#e5d5c6", "#c8b39b", "#a98d78", "#876657"])
+            }
+        };
+
+        // Select the modal element from the HTML.
+        const infoModal = d3.select("#info-modal");
+
+        // Function to blend two colors based on the current palette
+        const combineColors = (d) => {
+            const palette = colorPalettes[currentColorMode];
+            const fieldColor = palette.field(d.field);
+            const rankColor = palette.rank(d.rank);
+            const fieldRGB = d3.rgb(fieldColor);
+            const rankRGB = d3.rgb(rankColor);
+            return `rgb(${Math.round((fieldRGB.r + rankRGB.r) / 2)}, ${Math.round((fieldRGB.g + fieldRGB.g) / 2)}, ${Math.round((fieldRGB.b + rankRGB.b) / 2)})`;
+        };
+
+        // Function to create a hierarchical data structure for tree layouts.
+        function buildHierarchy() {
+            // Use a Map to quickly access nodes by their ID
+            const nodesById = new Map(data.nodes.map(d => [d.id, d]));
+
+            // Add a children array to each node
+            data.nodes.forEach(d => d.children = []);
+
+            // Populate the children arrays based on the links
+            data.links.forEach(link => {
+                const sourceNode = nodesById.get(link.source.id || link.source);
+                const targetNode = nodesById.get(link.target.id || link.target);
+                if (sourceNode && targetNode) {
+                    sourceNode.children.push(targetNode);
+                }
+            });
+
+            // Find the "root" nodes (those not targeted by any link)
+            const targetedNodes = new Set(data.links.map(d => d.target.id || d.target));
+            const rootNodes = data.nodes.filter(d => !targetedNodes.has(d.id));
+
+            // Create a single dummy root node to contain all other root nodes
+            const root = { id: "Root", children: rootNodes };
+            return d3.hierarchy(root);
+        }
+
+        // === Visualization Functions ===
+        
+        // Function to clear the existing graph elements from the SVG
+        function clearGraph() {
+            mainGroup.selectAll("*").remove();
+            if (simulation) {
+                simulation.stop(); // Stop the force simulation if it's running
+            }
+        }
+
+        // Function to update the colors of all nodes
+        function updateColors() {
+            mainGroup.selectAll("circle")
+                .transition()
+                .duration(500)
+                .attr("fill", d => combineColors(d.data || d));
+            
+            // If it's a force-directed graph, restart the simulation to apply the color changes
+            if (currentView === 'force' && simulation) {
+                simulation.alpha(1).restart();
+            }
+        }
+
+        function drawForceView() {
+            clearGraph();
+            currentView = 'force';
+
+            simulation = d3.forceSimulation(data.nodes)
+                .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
+                .force("charge", d3.forceManyBody().strength(-100))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+
+            const link = mainGroup.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(data.links)
+                .join("line")
+                .attr("class", "link");
+
+            const node = mainGroup.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(data.nodes)
+                .join("g")
+                .attr("class", "node");
+            
+            node.append("circle")
+                .attr("r", 10)
+                .attr("fill", d => combineColors(d))
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended))
+                .on("mouseover", function(event, d) {
+                    d3.select(this).attr('stroke', 'black').attr('stroke-width', 2);
+                    const nodeData = d.data || d;
+                    infoModal
+                        .html(`<h4>${nodeData.id}</h4><p>Job: ${nodeData.job}</p><p>Field: ${nodeData.field}</p><p>Rank: ${nodeData.rank}</p><p>Age: ${nodeData.age}</p>`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 20) + "px")
+                        .style("opacity", 1);
+                })
+                .on("mouseout", function() {
+                    d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1.5);
+                    infoModal.style("opacity", 0);
+                });
+
+            node.append("text")
+                .attr("y", 20)
+                .text(d => d.id);
+
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                node
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+            });
+
+            // Dragging functions for the nodes.
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
+            }
+
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
+            }
+
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                event.subject.fx = null;
+                event.subject.fy = null;
+            }
+        }
+
+        function drawTreeView() {
+            clearGraph();
+            currentView = 'tree';
+
+            // Create the tree layout
+            const treeLayout = d3.tree().size([height, width - 200]);
+            const root = buildHierarchy();
+
+            // Calculate tree positions
+            treeLayout(root);
+
+            // Draw links
+            mainGroup.append("g")
+                .attr("class", "links")
+                .selectAll("path")
+                .data(root.links())
+                .join("path")
+                .attr("class", "link")
+                .attr("d", d3.linkVertical()
+                    .x(d => d.x)
+                    .y(d => d.y));
+
+            // Draw nodes and labels
+            const node = mainGroup.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(root.descendants())
+                .join("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+
+            node.append("circle")
+                .attr("r", 5)
+                .attr("fill", d => combineColors(d.data));
+
+            node.append("text")
+                .attr("dy", "0.31em")
+                .attr("y", d => d.children ? -15 : 15)
+                .attr("text-anchor", d => d.children ? "middle" : "middle")
+                .text(d => d.data.id === "Root" ? "" : d.data.id);
+        }
+
+        function drawRadialView() {
+            clearGraph();
+            currentView = 'radial';
+
+            // Create the tree layout for a radial view
+            const treeLayout = d3.tree().size([2 * Math.PI, Math.min(width, height) / 2 - 100]);
+            const root = buildHierarchy();
+            treeLayout(root);
+
+            // Draw links
+            mainGroup.append("g")
+                .attr("class", "links")
+                .attr("transform", `translate(${width / 2},${height / 2})`)
+                .selectAll("path")
+                .data(root.links())
+                .join("path")
+                .attr("class", "link")
+                .attr("d", d3.linkRadial()
+                    .angle(d => d.x)
+                    .radius(d => d.y));
+
+            // Draw nodes and labels
+            const node = mainGroup.append("g")
+                .attr("class", "nodes")
+                .attr("transform", `translate(${width / 2},${height / 2})`)
+                .selectAll("g")
+                .data(root.descendants())
+                .join("g")
+                .attr("class", "node")
+                .attr("transform", d => `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)`);
+
+            node.append("circle")
+                .attr("r", 5)
+                .attr("fill", d => combineColors(d.data))
+                .on("mouseover", function(event, d) {
+                    d3.select(this).attr('stroke', 'black').attr('stroke-width', 2);
+                    const nodeData = d.data || d;
+                    infoModal
+                        .html(`<h4>${nodeData.id}</h4><p>Job: ${nodeData.job}</p><p>Field: ${nodeData.field}</p><p>Rank: ${nodeData.rank}</p><p>Age: ${nodeData.age}</p>`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 20) + "px")
+                        .style("opacity", 1);
+                })
+                .on("mouseout", function() {
+                    d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1.5);
+                    infoModal.style("opacity", 0);
+                });
+        }
+
+        // === JavaScript for the side windows and menu buttons ===
+        // Get all button and side window elements.
+        const menuButtons = document.querySelectorAll('.menu-button');
+        const sideWindows = document.querySelectorAll('.side-window');
+        const buttonContainer = document.getElementById('menu-button-container');
+
+        // Function to toggle a specific menu and close others.
+        function toggleSideMenu(windowElement) {
+            const isAlreadyOpen = windowElement.classList.contains('open');
+
+            // Close all windows and remove 'open' class from all buttons.
+            sideWindows.forEach(win => win.classList.remove('open'));
+            buttonContainer.classList.remove('open');
+
+            // If the clicked menu was not already open, open it and slide the buttons.
+            if (!isAlreadyOpen) {
+                windowElement.classList.add('open');
+                buttonContainer.classList.add('open');
+            }
+        }
+
+        // Add a click event listener to each button.
+        menuButtons.forEach((button, index) => {
+            const windowElement = sideWindows[index];
+            button.addEventListener('click', () => {
+                toggleSideMenu(windowElement);
+            });
+        });
+
+        // Add listeners to the new visualization buttons
+        document.getElementById('force-view-button').addEventListener('click', () => {
+            currentView = 'force';
+            drawForceView();
+        });
+        document.getElementById('tree-view-button').addEventListener('click', () => {
+            currentView = 'tree';
+            drawTreeView();
+        });
+        document.getElementById('radial-view-button').addEventListener('click', () => {
+            currentView = 'radial';
+            drawRadialView();
+        });
+
+        // Add listeners for the color dropdown
+        const colorDropdownButton = document.getElementById('color-dropdown-button');
+        const colorDropdownContent = document.getElementById('color-dropdown');
+        colorDropdownButton.addEventListener('click', (event) => {
+            event.stopPropagation(); // Prevent the body click from immediately closing the dropdown
+            colorDropdownContent.style.display = colorDropdownContent.style.display === 'block' ? 'none' : 'block';
+        });
+
+        document.getElementById('default-colors').addEventListener('click', () => {
+            currentColorMode = 'default';
+            updateColors();
+            colorDropdownContent.style.display = 'none';
+        });
+        document.getElementById('red-green-colorblind').addEventListener('click', () => {
+            currentColorMode = 'redGreen';
+            updateColors();
+            colorDropdownContent.style.display = 'none';
+        });
+        document.getElementById('blue-red-colorblind').addEventListener('click', () => {
+            currentColorMode = 'blueRed';
+            updateColors();
+            colorDropdownContent.style.display = 'none';
+        });
+
+        // Close the dropdown if the user clicks anywhere else on the page
+        document.body.addEventListener('click', () => {
+            colorDropdownContent.style.display = 'none';
+        });
+        
+        // Initial load: show the force-directed graph
+        drawForceView();
+    </script>
+</body>
+</html>

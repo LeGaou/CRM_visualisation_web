@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Simple Force-Directed Graph with Modal</title>
+    <title>Simple Force-Directed Graph</title>
     <style>
         body {
             margin: 0;
@@ -27,80 +27,53 @@
             font-size: 10px;
             text-anchor: middle;
         }
-        /* Modal styling */
-        .modal {
-            position: absolute;
-            background-color: white;
-            border: 1px solid #ccc;
-            padding: 10px;
-            border-radius: 5px;
-            pointer-events: none; /* Allows mouse events to pass through */
-            opacity: 0;
-            transition: opacity 0.2s;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-        }
-        .modal h4 {
-            margin: 0 0 5px 0;
-        }
     </style>
 </head>
 <body>
     <div id="graph-container"></div>
-    <div id="info-modal" class="modal"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <script>
+        // Sample data for the graph
         const data = {
             nodes: [
-                { id: "Alice", field: "tech", rank: "ceo", age: 34, job: "CEO" },
-                { id: "Bob", field: "tech", rank: "manager", age: 28, job: "Manager" },
-                { id: "Charlie", field: "tech", rank: "worker", age: 25, job: "Worker" },
-                { id: "David", field: "tech", rank: "intern", age: 31, job: "Intern" },
-                { id: "Eve", field: "medicine", rank: "manager", age: 45, job: "Manager" },
-                { id: "Frank", field: "medicine", rank: "worker", age: 39, job: "Worker" },
-                { id: "Grace", field: "cosmetics", rank: "ceo", age: 55, job: "CEO" },
-                { id: "Heidi", field: "cosmetics", rank: "worker", age: 29, job: "Worker" },
-                { id: "Ivan", field: "politics", rank: "ceo", age: 60, job: "Politician" },
-                { id: "Judy", field: "politics", rank: "worker", age: 40, job: "Staff" }
+                { id: "Alice", group: 1 },
+                { id: "Bob", group: 2 },
+                { id: "Charlie", group: 2 },
+                { id: "David", group: 2 },
+                { id: "Eve", group: 1 },
+                { id: "Frank", group: 2 },
             ],
             links: [
                 { source: "Alice", target: "Bob" },
                 { source: "Alice", target: "David" },
-                { source: "Alice", target: "Charlie" },
+                { source: "Alice", target: "Eve" },
                 { source: "Bob", target: "Charlie" },
-                { source: "Eve", target: "Frank" },
-                { source: "Grace", target: "Heidi" },
-                { source: "Ivan", target: "Judy" }
+                { source: "Charlie", target: "Eve" },
+                { source: "David", target: "Frank" },
             ]
         };
 
+        // Set up dimensions
         const width = window.innerWidth;
         const height = window.innerHeight;
 
+        // Create SVG container
         const svg = d3.select("#graph-container")
             .append("svg")
-            .attr("viewBox", `0 0 ${width} ${height}`);
+            .attr("width", width)
+            .attr("height", height);
 
-        const colorField = d3.scaleOrdinal()
-            .domain(["tech", "medicine", "cosmetics", "politics"])
-            .range(["#1f77b4", "#2ca02c", "#d62728", "#9467bd"]);
+        // Define a color scale
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-        const colorRank = d3.scaleOrdinal()
-            .domain(["intern", "worker", "manager", "ceo"])
-            .range(["#f0f8ff", "#add8e6", "#87cefa", "#1e90ff"]);
-
-        const combineColors = (fieldColor, rankColor) => {
-            const fieldRGB = d3.rgb(fieldColor);
-            const rankRGB = d3.rgb(rankColor);
-            // Simple blending function, you can adjust this logic
-            return `rgb(${Math.round((fieldRGB.r + rankRGB.r) / 2)}, ${Math.round((fieldRGB.g + rankRGB.g) / 2)}, ${Math.round((fieldRGB.b + rankRGB.b) / 2)})`;
-        };
-
+        // Create the force simulation
         const simulation = d3.forceSimulation(data.nodes)
-            .force("link", d3.forceLink(data.links).id(d => d.id).distance(100))
-            .force("charge", d3.forceManyBody().strength(-300))
+            .force("link", d3.forceLink(data.links).id(d => d.id).distance(50))
+            .force("charge", d3.forceManyBody().strength(-100))
             .force("center", d3.forceCenter(width / 2, height / 2));
 
+        // Draw the links
         const link = svg.append("g")
             .attr("class", "links")
             .selectAll("line")
@@ -108,8 +81,7 @@
             .join("line")
             .attr("class", "link");
 
-        const infoModal = d3.select("#info-modal");
-
+        // Draw the nodes
         const node = svg.append("g")
             .attr("class", "nodes")
             .selectAll("g")
@@ -117,56 +89,28 @@
             .join("g")
             .attr("class", "node");
 
+        // Append circles to nodes
         node.append("circle")
-            .attr("r", 10)
-            .attr("fill", d => combineColors(colorField(d.field), colorRank(d.rank)))
-            .call(d3.drag()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended))
-            .on("mouseover", function(event, d) {
-                // Display the modal with new information
-                infoModal
-                    .html(`<h4>${d.id}</h4><p>Job: ${d.job}</p><p>Field: ${d.field}</p><p>Rank: ${d.rank}</p><p>Age: ${d.age}</p>`)
-                    .style("left", (event.pageX + 10) + "px")
-                    .style("top", (event.pageY - 20) + "px")
-                    .style("opacity", 1);
-            })
-            .on("mouseout", function() {
-                // Hide the modal
-                infoModal.style("opacity", 0);
-            });
+            .attr("r", 5)
+            .attr("fill", d => color(d.group));
 
+        // Append text labels to nodes
         node.append("text")
-            .attr("y", 20)
+            .attr("y", 15)
             .text(d => d.id);
 
+        // Update positions on each tick of the simulation
         simulation.on("tick", () => {
             link
                 .attr("x1", d => d.source.x)
                 .attr("y1", d => d.source.y)
                 .attr("x2", d => d.target.x)
                 .attr("y2", d => d.target.y);
+            
             node
                 .attr("transform", d => `translate(${d.x},${d.y})`);
         });
 
-        function dragstarted(event) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
-        }
-
-        function dragged(event) {
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
-        }
-
-        function dragended(event) {
-            if (!event.active) simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
-        }
     </script>
 </body>
 </html>
